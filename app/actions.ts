@@ -56,12 +56,13 @@ export async function uploadReports(_: ActionState, form: FormData): Promise<Act
   await requireAdmin();
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
   if (!files.length) return { error: "Choose at least one file." };
+  const clientId = Number(form.get("clientId")) || null;
   const lines: string[] = [];
   let failed = false;
   for (const f of files) {
     try {
       const parsed = await parseReportFile(Buffer.from(await f.arrayBuffer()), f.name);
-      const msg = await importParsed(parsed, "upload");
+      const msg = await importParsed(parsed, "upload", clientId);
       lines.push(`${f.name}: ${msg}`);
       await logImport("upload", "upload", "ok", `${f.name}: ${msg}`);
     } catch (e) {
@@ -90,13 +91,13 @@ export async function saveClient(_: ActionState, form: FormData): Promise<Action
   }
   const vals = [name, String(form.get("zoho_org") ?? "").trim() || null, channels, list(form.get("meta_match")),
     list(form.get("google_match")), String(form.get("default_position") ?? "").trim() || null, JSON.stringify(sourceMap),
-    form.get("active") === "on"];
+    form.get("active") === "on", list(form.get("position_fields"))];
   if (id) {
     await db().query(`UPDATE clients SET name=$1, zoho_org=$2, channels=$3, meta_match=$4, google_match=$5, default_position=$6,
-                      source_map=$7::jsonb, active=$8 WHERE id=$9`, [...vals, id]);
+                      source_map=$7::jsonb, active=$8, position_fields=$9 WHERE id=$10`, [...vals, id]);
   } else {
-    await db().query(`INSERT INTO clients (name, zoho_org, channels, meta_match, google_match, default_position, source_map, active, slug)
-                      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)`, [...vals, slugify(name) || `client-${Date.now()}`]);
+    await db().query(`INSERT INTO clients (name, zoho_org, channels, meta_match, google_match, default_position, source_map, active, position_fields, slug)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)`, [...vals, slugify(name) || `client-${Date.now()}`]);
   }
   revalidatePath("/", "layout");
   return { ok: id ? "Client saved." : "Client added." };

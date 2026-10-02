@@ -45,12 +45,25 @@ export function db(): Sql {
 export type Client = {
   id: number; slug: string; name: string; zoho_org: string | null;
   channels: string[]; meta_match: string[]; google_match: string[];
-  default_position: string | null; source_map: Record<string, string>; active: boolean;
+  default_position: string | null; position_fields: string[]; source_map: Record<string, string>; active: boolean;
 };
 
+/** Small schema updates added after the first release. Idempotent; runs once per server instance. */
+const MIGRATIONS = [
+  `ALTER TABLE clients ADD COLUMN IF NOT EXISTS position_fields TEXT[] NOT NULL DEFAULT '{}'`,
+];
+let migrated: Promise<void> | null = null;
+export function ensureSchema(): Promise<void> {
+  if (!migrated) {
+    migrated = (async () => { for (const m of MIGRATIONS) await db().query(m); })().catch(e => { migrated = null; throw e; });
+  }
+  return migrated;
+}
+
 export async function getClients(includeInactive = false): Promise<Client[]> {
+  await ensureSchema();
   const rows = await db().query(
-    `SELECT id, slug, name, zoho_org, channels, meta_match, google_match, default_position, source_map, active
+    `SELECT id, slug, name, zoho_org, channels, meta_match, google_match, default_position, position_fields, source_map, active
        FROM clients ${includeInactive ? "" : "WHERE active"} ORDER BY name`);
   return rows as Client[];
 }

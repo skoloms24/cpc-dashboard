@@ -62,7 +62,9 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
     const row: Record<string, string | number | null> = { week: weekTick(w, long), Blended: d?.paidCPC ?? null };
     for (const ch of cpcChannels) row[ch] = d?.channelCPC[ch] ?? null;
     return row;
-  }).filter(r => Object.entries(r).some(([k, v]) => k !== "week" && v != null));
+  });
+  const firstCpc = cpcTrend.findIndex(r => Object.entries(r).some(([k, v]) => k !== "week" && v != null));
+  if (firstCpc > 0) cpcTrend.splice(0, firstCpc); else if (firstCpc < 0) cpcTrend.length = 0;
 
 
   return (

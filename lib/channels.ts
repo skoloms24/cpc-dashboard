@@ -4,10 +4,11 @@ export const ALL_CHANNELS = ["Meta", "Google", "Indeed", "Organic", "Untracked",
 
 const DEFAULT_MAP: Record<string, string> = {
   meta: "Meta", facebook: "Meta", fb: "Meta", ig: "Meta", instagram: "Meta",
-  "facebook/instagram": "Meta", "facebook / instagram": "Meta", "meta ads": "Meta",
+  "facebook/instagram": "Meta", "facebook / instagram": "Meta", "meta ads": "Meta", "fb-sitelink": "Meta", an: "Meta", "audience network": "Meta",
   google: "Google", "google ads": "Google", adwords: "Google", youtube: "Google", gads: "Google",
   indeed: "Indeed",
-  organic: "Organic",
+  organic: "Organic", referral: "Organic", "employee referral": "Organic", website: "Organic",
+  "manual input": "Other", "qr code": "Other",
   "": "Untracked", "-": "Untracked", null: "Untracked", none: "Untracked", "(none)": "Untracked", undefined: "Untracked",
 };
 

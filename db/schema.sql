@@ -10,9 +10,13 @@ CREATE TABLE IF NOT EXISTS clients (
   google_match     TEXT[] NOT NULL DEFAULT '{}',  -- Google Ads account names or customer IDs
   default_position TEXT,                          -- used when the Zoho report has no position columns (e.g. Trooper)
   source_map       JSONB NOT NULL DEFAULT '{}',   -- per-client UTM Source -> channel overrides
+  position_fields  TEXT[] NOT NULL DEFAULT '{}',  -- Zoho columns that say which position(s) someone wants
   active           BOOLEAN NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Added after first release; safe to re-run.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS position_fields TEXT[] NOT NULL DEFAULT '{}';
 
 -- One row per candidate from the weekly Zoho report. Re-importing a client's week replaces that week.
 CREATE TABLE IF NOT EXISTS candidates (

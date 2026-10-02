@@ -61,9 +61,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         if (d?.paidCPC != null) { any = true; spend += d.spendTotal || 0; cands += d.paidCandidates; }
       }
       row.__all = any && cands ? Math.round((spend / cands) * 100) / 100 : null;
-      return any ? row : null;
+      return { row, any };
     })
-    .filter((r): r is Record<string, string | number | null> => !!r);
+    // Start at the first week with spend, but keep later empty weeks so the timeline stays to scale.
+    .filter((x, i, arr) => arr.slice(0, i + 1).some(y => y.any))
+    .map(x => x.row);
   const clientSeries = [
     { key: "__all", label: "All clients", color: "#5d6b7c", dashed: true, width: 2.5 },
     ...activeClients.map((c, i) => ({ key: c.slug, label: c.name, color: clientColor(i) })),

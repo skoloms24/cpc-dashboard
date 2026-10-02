@@ -1,7 +1,8 @@
 import { db, Client, getClients } from "./db";
 import { channelFor } from "./channels";
 import { weekStartOf } from "./week";
-import type { ZohoReport } from "./parse/zoho";
+import { parseZoho, type ZohoReport } from "./parse/zoho";
+import type { Table } from "./parse/table";
 import type { SpendRow } from "./parse/spend";
 import type { ParsedReport } from "./parse/detect";
 import type { SheetSpendRow } from "./parse/spendSheet";
@@ -16,10 +17,17 @@ export function findClientForZoho(report: ZohoReport, clients: Client[]): Client
 }
 
 /** Replace each week's candidates for this client with the rows in the report. */
-export async function importZoho(report: ZohoReport, clientOverride?: Client): Promise<string> {
+export async function importZoho(parsed: ZohoReport, table: Table | null, clientId?: number | null): Promise<string> {
   const clients = await getClients(true);
-  const client = clientOverride ?? findClientForZoho(report, clients);
-  if (!client) throw new Error(`No client is set up for the Zoho account "${report.org ?? "unknown"}". Add it on the Admin page (Zoho account name must match).`);
+  const byOrg = findClientForZoho(parsed, clients);
+  const client = byOrg ?? (clientId ? clients.find(c => c.id === clientId) ?? null : null);
+  if (!client) {
+    throw new Error(parsed.org
+      ? `No client is set up for the Zoho account "${parsed.org}". Add it on the Admin page (Zoho account name must match).`
+      : `This Zoho file doesn't say which account it came from. Pick the client in "Client for Zoho files" and upload it again.`);
+  }
+  // Re-read with this client's position columns when it has them (full module exports have dozens of unrelated Yes/No fields).
+  const report = table && client.position_fields.length ? parseZoho(table, { positionFields: client.position_fields }) : parsed;
   const byWeek = new Map<string, typeof report.candidates>();
   for (const c of report.candidates) {
     const w = weekStartOf(c.date);
@@ -41,10 +49,15 @@ export async function importZoho(report: ZohoReport, clientOverride?: Client): P
     ]);
     parts.push(`${rows.length} candidates for week of ${week}`);
   }
+  const notes: string[] = [];
+  if (report.usedLeadSource) notes.push(`${report.usedLeadSource} had no UTM Source, so Lead Source was used`);
+  if (!report.positionColumns.length && !client.default_position && report.columnCount > 15)
+    notes.push("no position columns set for this client, so positions weren't counted (set them under Admin → Clients)");
+  const tail = notes.length ? `. Note: ${notes.join("; ")}.` : "";
   if (!byWeek.size) return `${client.name}: no candidates in file`;
-  if (byWeek.size <= 3) return `${client.name}: ${parts.join(", ")}`;
+  if (byWeek.size <= 3) return `${client.name}: ${parts.join(", ")}${tail}`;
   const ws = [...byWeek.keys()].sort();
-  return `${client.name}: ${report.candidates.length} candidates across ${byWeek.size} weeks (${ws[0]} to ${ws[ws.length - 1]})`;
+  return `${client.name}: ${report.candidates.length} candidates across ${byWeek.size} weeks (${ws[0]} to ${ws[ws.length - 1]})${tail}`;
 }
 
 export async function importSpend(rows: SpendRow[], source: "api" | "email" | "upload"): Promise<string> {
@@ -91,8 +104,8 @@ export async function importSpendSheet(rows: SheetSpendRow[], filename: string):
   return msg;
 }
 
-export async function importParsed(p: ParsedReport, source: "email" | "upload"): Promise<string> {
-  if (p.kind === "zoho") return importZoho(p.report);
+export async function importParsed(p: ParsedReport, source: "email" | "upload", clientId?: number | null): Promise<string> {
+  if (p.kind === "zoho") return importZoho(p.report, p.table, clientId);
   if (p.kind === "sheet") return importSpendSheet(p.rows, p.filename);
   if (p.kind === "spend") return importSpend(p.rows, source);
   throw new Error(`${p.filename}: ${p.reason}`);

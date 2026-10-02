@@ -64,7 +64,7 @@ export default async function AdminPage() {
         </section>
         <section className="card">
           <div><h3>Upload report files</h3><p className="hint">Drop in any mix of files, any date range; everything is split into Sunday–Saturday weeks. Zoho candidate exports, Meta reports (Campaign name, Day, Amount spent), Google Ads reports (Account, Day, Cost), or a spend sheet with columns Client, Week, Channel, Amount (for Indeed and other past spend). CSV or XLSX.</p></div>
-          <UploadForm />
+          <UploadForm clients={clients.map(c => ({ id: c.id, name: c.name }))} />
         </section>
       </div>
 
