@@ -2,7 +2,7 @@ import { db, Client, getClients } from "./db";
 import { PAID_CHANNELS, PaidChannel } from "./channels";
 import { addDays, lastCompletedWeek } from "./week";
 
-export type SpendCell = { amount: number; source: "manual" | "api" | "email" | "upload" | "mixed"; updatedBy?: string };
+export type SpendCell = { amount: number; source: "manual" | "api" | "email" | "upload" | "estimate" | "mixed"; updatedBy?: string };
 export type ClientWeek = {
   client: Client;
   weekStart: string;
@@ -27,6 +27,11 @@ const lc = (s: string) => s.trim().toLowerCase();
 /** Which clients a Meta campaign or Google account belongs to. Longest matching pattern wins. */
 export function matchSpend(platform: string, key: string, accountId: string | null, clients: Client[]): { client: Client | null; all: Client[] } {
   const k = lc(key), id = (accountId || "").replace(/-/g, "");
+  // Indeed spend is stored under the client's own name when it's imported.
+  if (platform === "Indeed") {
+    const c = clients.find(x => lc(x.name) === k || (x.zoho_org && lc(x.zoho_org) === k)) ?? null;
+    return { client: c, all: c ? [c] : [] };
+  }
   const scored: { c: Client; len: number }[] = [];
   for (const c of clients) {
     const pats = platform === "Meta" ? c.meta_match : c.google_match;

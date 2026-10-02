@@ -12,7 +12,8 @@ import { SpendForm } from "@/components/Forms";
 
 export const dynamic = "force-dynamic";
 
-const SOURCE_LABEL: Record<string, string> = { manual: "entered by hand", api: "from API", email: "from emailed report", upload: "from uploaded file", mixed: "from several sources" };
+const SOURCE_LABEL: Record<string, string> = { manual: "entered by hand", api: "from API", email: "from emailed report", upload: "from uploaded file",
+  estimate: "estimated: an export's total spread across the days it covered", mixed: "from several sources (part estimated)" };
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ week?: string; range?: string }> }) {
   const { slug } = await params;
@@ -116,7 +117,8 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                     <tr key={ch}>
                       <td><span className="swatch" style={{ background: CHANNEL_COLORS[ch] }} />{ch}
                         {isOff ? <div className="tag">{s ? "marked off this week" : "no spend recorded this week"}{cw.byChannel[ch] ? ", so these candidates count as free" : ""}</div>
-                          : s && <div className="tag">{s.updatedBy?.startsWith("sheet: ") ? `from spend sheet ${s.updatedBy.slice(7)}` : `${SOURCE_LABEL[s.source] ?? s.source}${s.updatedBy ? ` · ${s.updatedBy}` : ""}`}</div>}</td>
+                          : s && <div className="tag">{s.updatedBy?.startsWith("sheet: ") ? `from spend sheet ${s.updatedBy.slice(7)}`
+                            : `${SOURCE_LABEL[s.source] ?? s.source}${s.updatedBy ? ` · ${s.updatedBy}` : ""}`}</div>}</td>
                       <td className="r big">{cw.byChannel[ch] || 0}</td>
                       <td className="r">{paid
                         ? <SpendForm key={`${current}-${ch}-${s?.amount ?? "x"}`} clientId={client.id} week={current} channel={ch} amount={s?.amount ?? null} missing={isMissing} label={`${ch} spend`} />

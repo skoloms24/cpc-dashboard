@@ -1,6 +1,6 @@
 import { Table, clean, findHeaderRow, readDateTime, readMoney } from "./table";
 
-export type SpendRow = { platform: "Meta" | "Google"; key: string; accountId: string | null; day: string; amount: number };
+export type SpendRow = { platform: "Meta" | "Google" | "Indeed"; key: string; accountId: string | null; day: string; amount: number };
 
 /** Index of the first column matching the patterns, trying patterns in priority order. */
 const idx = (cells: string[], ...names: RegExp[]) => {

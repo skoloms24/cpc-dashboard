@@ -94,7 +94,10 @@ Every import is split into Sunday–Saturday weeks automatically, so a file can 
 2. **Meta and Google spend:** either
    - with API keys set, use **Admin → Backfill history** and pick a start date (Meta keeps about 37 months of history), or
    - upload all-time exports: Meta Ads Reporting with *Campaign name*, *Day* and *Amount spent* over the full range, and a Google Ads manager-account report with *Account*, *Day* and *Cost*.
-3. **Indeed and other hand-kept spend:** upload a **spend sheet**, which is any CSV or XLSX with these columns:
+3. **Indeed:** upload Indeed's job performance export (**JobsCampaigns_START_END.csv**), and keep Indeed's file name, because the dates come from it. The client comes from the *Company name* column.
+   - A **one-week** export (Sunday–Saturday) gives exact spend for that week. Use this for the weekly routine.
+   - A **longer** export only has one total per job, so the app spreads each job's spend evenly over the days it was live and marks those weeks as *estimated*. The shorter the export, the better the estimate. One export per month is a good balance for history. A later, shorter export replaces the estimate for its days.
+4. **Other hand-kept spend:** upload a **spend sheet**, which is any CSV or XLSX with these columns:
 
    | Client | Week | Channel | Amount |
    |---|---|---|---|

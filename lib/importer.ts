@@ -1,11 +1,12 @@
 import { db, Client, getClients } from "./db";
 import { channelFor } from "./channels";
-import { weekStartOf } from "./week";
+import { weekStartOf, addDays } from "./week";
 import { parseZoho, type ZohoReport } from "./parse/zoho";
 import type { Table } from "./parse/table";
 import type { SpendRow } from "./parse/spend";
 import type { ParsedReport } from "./parse/detect";
 import type { SheetSpendRow } from "./parse/spendSheet";
+import type { IndeedExport } from "./parse/indeed";
 import { PAID_CHANNELS } from "./channels";
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ");
@@ -60,7 +61,7 @@ export async function importZoho(parsed: ZohoReport, table: Table | null, client
   return `${client.name}: ${report.candidates.length} candidates across ${byWeek.size} weeks (${ws[0]} to ${ws[ws.length - 1]})${tail}`;
 }
 
-export async function importSpend(rows: SpendRow[], source: "api" | "email" | "upload"): Promise<string> {
+export async function importSpend(rows: SpendRow[], source: "api" | "email" | "upload" | "estimate"): Promise<string> {
   if (!rows.length) return "no spend rows";
   await db().query(
     `INSERT INTO spend_raw (platform, key, account_id, day, amount, source, updated_at)
@@ -104,9 +105,64 @@ export async function importSpendSheet(rows: SheetSpendRow[], filename: string):
   return msg;
 }
 
+/**
+ * Indeed's job export has one spend total per job for the whole date range in its file name.
+ * Spend is stored per day (like Meta and Google), so overlapping uploads combine correctly:
+ * - one-week file: the total is spread over that week's days, and the week total is exact;
+ * - longer file: each job's total is spread evenly over the days it was live inside the range (an estimate).
+ * A later, shorter export for the same days replaces the estimate with exact numbers.
+ */
+export async function importIndeed(data: IndeedExport, filename: string, clientId?: number | null): Promise<string> {
+  if (!data.rangeStart || !data.rangeEnd) {
+    throw new Error("Can't tell which dates this Indeed export covers. Keep Indeed's file name (JobsCampaigns_STARTDATE_ENDDATE.csv) when uploading.");
+  }
+  const { rangeStart, rangeEnd } = data;
+  const clients = await getClients(true);
+  const pick = clientId ? clients.find(c => c.id === clientId) : undefined;
+  const oneWeek = weekStartOf(rangeStart) === weekStartOf(rangeEnd);
+  const byDay = new Map<string, SpendRow>();
+  const unknown = new Set<string>();
+  let dropped = 0;
+  for (const j of data.jobs) {
+    if (j.spend <= 0) continue;
+    const c = clients.find(x => norm(x.name) === norm(j.company) || (x.zoho_org && norm(x.zoho_org) === norm(j.company))) ?? pick;
+    if (!c) { unknown.add(j.company); continue; }
+    let from = rangeStart, to = rangeEnd;
+    if (!oneWeek) {
+      if (j.created && j.created > from) from = j.created;
+      if (!j.open && j.lastUpdated && j.lastUpdated < to) to = j.lastUpdated;
+    }
+    if (to < from) { dropped += j.spend; continue; }
+    const days: string[] = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) days.push(d);
+    // Split in whole cents, giving the leftover cents to the last day, so the days add up to the job's exact total.
+    const cents = Math.round(j.spend * 100), base = Math.floor(cents / days.length);
+    days.forEach((d, i) => {
+      const amt = (i === days.length - 1 ? cents - base * (days.length - 1) : base) / 100;
+      const k = `${c.id}|${d}`;
+      const e = byDay.get(k);
+      if (e) e.amount = Math.round((e.amount + amt) * 100) / 100;
+      else byDay.set(k, { platform: "Indeed", key: c.name, accountId: null, day: d, amount: amt });
+    });
+  }
+  if (!byDay.size) throw new Error(`No Indeed spend matched a client.${unknown.size ? ` Unknown companies: ${[...unknown].join(", ")}. Add them as clients (or pick the client on the upload form).` : ""}`);
+  const rows = [...byDay.values()];
+  // A new export replaces whatever was stored for the same client and days.
+  await importSpend(rows, oneWeek ? "upload" : "estimate");
+  const total = rows.reduce((a, x) => a + x.amount, 0);
+  const weeks = new Set(rows.map(r => weekStartOf(r.day)));
+  const names = [...new Set(rows.map(r => r.key))];
+  let msg = `Indeed: $${total.toFixed(2)} for ${names.join(", ")} across ${weeks.size} week${weeks.size === 1 ? "" : "s"}` +
+    (oneWeek ? ` (week of ${weekStartOf(rangeStart)})` : ` (${rangeStart} to ${rangeEnd}, spread over each job's live days, marked as estimated)`);
+  if (unknown.size) msg += `; skipped unknown companies: ${[...unknown].join(", ")}`;
+  if (dropped) msg += `; $${dropped.toFixed(2)} from jobs with no live days in range was skipped`;
+  return msg;
+}
+
 export async function importParsed(p: ParsedReport, source: "email" | "upload", clientId?: number | null): Promise<string> {
   if (p.kind === "zoho") return importZoho(p.report, p.table, clientId);
   if (p.kind === "sheet") return importSpendSheet(p.rows, p.filename);
+  if (p.kind === "indeed") return importIndeed(p.data, p.filename, clientId);
   if (p.kind === "spend") return importSpend(p.rows, source);
   throw new Error(`${p.filename}: ${p.reason}`);
 }
