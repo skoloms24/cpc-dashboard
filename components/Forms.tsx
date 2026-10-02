@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef } from "react";
-import { saveSpend, runImportNow, uploadReports, saveClient, assignSpend, type ActionState } from "@/app/actions";
+import { saveSpend, runImportNow, uploadReports, saveClient, assignSpend, backfillApiSpend, type ActionState } from "@/app/actions";
 
 export function SpendForm({ clientId, week, channel, amount, missing, label }:
   { clientId: number; week: string; channel: string; amount: number | null; missing: boolean; label: string }) {
@@ -104,6 +104,19 @@ export function AssignForm({ platform, k, clients }: { platform: string; k: stri
       <button className="btn small" disabled={pending}>Assign</button>
       {state.ok && <span className="tag" style={{ color: "var(--good)" }}>Done</span>}
       {state.error && <span className="tag" style={{ color: "var(--bad)" }}>{state.error}</span>}
+    </form>
+  );
+}
+
+export function BackfillForm({ defaultSince }: { defaultSince: string }) {
+  const [state, action, pending] = useActionState(backfillApiSpend, {} as ActionState);
+  return (
+    <form action={action} style={{ display: "grid", gap: 10 }}>
+      <label className="field" htmlFor="backfill-since">Pull spend starting from
+        <input id="backfill-since" type="date" name="since" defaultValue={defaultSince} style={{ font: "14px var(--body)", color: "var(--ink)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 6, padding: "7px 10px", maxWidth: 220 }} />
+      </label>
+      <div><button className="btn" disabled={pending}>{pending ? "Pulling history…" : "Backfill API spend"}</button></div>
+      <Result state={state} />
     </form>
   );
 }

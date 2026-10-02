@@ -79,6 +79,27 @@ To have the app pick reports up from Outlook on its own instead, a Microsoft 365
 
 The job lists every enabled account under the manager account and pulls daily cost, keyed by account name.
 
+## Backfilling history
+
+The charts can go back as far as your data does. On the Overview and client pages, pick **12 weeks / 6 months / 1 year / All time**. The dashed line shows CPC for all clients (or all channels) combined.
+
+Every import is split into Sunday–Saturday weeks automatically, so a file can cover any date range. Re-importing a week replaces it, so nothing is ever double counted. To load history:
+
+1. **Candidates:** in each client's Zoho, export the same report with the date filter set to *all time*, or start from the date you began running ads, as CSV. Upload it on **Admin → Upload report files**.
+   Zoho's *scheduled* reports cap at 2,000 rows. A normal export goes much higher, but for a very large client export a year at a time.
+2. **Meta and Google spend:** either
+   - with API keys set, use **Admin → Backfill history** and pick a start date (Meta keeps about 37 months of history), or
+   - upload all-time exports: Meta Ads Reporting with *Campaign name*, *Day* and *Amount spent* over the full range, and a Google Ads manager-account report with *Account*, *Day* and *Cost*.
+3. **Indeed and other hand-kept spend:** upload a **spend sheet**, which is any CSV or XLSX with these columns:
+
+   | Client | Week | Channel | Amount |
+   |---|---|---|---|
+   | Placer County Sheriff's Office | 2026-09-20 | Indeed | 452.34 |
+
+   *Week* can be any date in the week. Rows for the same client, week and channel are added together, so monthly Indeed invoices can be entered against the first week of the month, or split across its weeks. *Client* must match a client name in Admin.
+
+**How missing spend is handled:** if a week is missing spend for one channel (for example, no Indeed number yet), *Paid CPC* uses only the channels that have spend. A missing number therefore never makes CPC look better than it was. *Blended CPC* stays blank until every channel's spend is in.
+
 ## 6. Adding a client
 
 1. **Admin → Add a client:**
@@ -96,8 +117,8 @@ The job lists every enabled account under the manager account and pulls daily co
 - **Week:** Sunday 00:00 through Saturday, by the Zoho record's Created Time.
 - **Channel:** each UTM Source maps to Meta (Meta, Facebook/Instagram, fb, ig…), Google, Indeed, Organic, Untracked (blank or "null"), or Other. Per-client overrides go in *UTM Source overrides*, e.g. `chatgpt.com = Organic`.
 - **Channel CPC:** that channel's spend ÷ candidates from that channel.
-- **Paid CPC:** all spend ÷ candidates from paid channels.
-- **Blended CPC:** all spend ÷ every candidate, including organic and untracked.
+- **Paid CPC:** spend ÷ candidates from the paid channels that have spend that week.
+- **Blended CPC:** spend ÷ every candidate, including organic and untracked. Shown only when every paid channel's spend is in.
 - **Positions:** each Yes/No position column in the Zoho report. A candidate who said yes to two positions counts under both.
 - **Manual spend:** a number typed in for a channel and week replaces the imported number for that channel. Clear the box to go back to the imported number.
 

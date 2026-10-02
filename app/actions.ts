@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth, emailAllowed, isAdmin } from "@/auth";
 import { db } from "@/lib/db";
-import { runWeekly } from "@/lib/jobs";
+import { runWeekly, backfillApis } from "@/lib/jobs";
 import { parseReportFile } from "@/lib/parse/detect";
 import { importParsed } from "@/lib/importer";
 import { logImport } from "@/lib/db";
@@ -113,4 +113,14 @@ export async function assignSpend(_: ActionState, form: FormData): Promise<Actio
   await db().query(`UPDATE clients SET ${col} = array_append(${col}, $1) WHERE id = $2 AND NOT ($1 = ANY(${col}))`, [key, clientId]);
   revalidatePath("/", "layout");
   return { ok: `Assigned "${key}".` };
+}
+
+export async function backfillApiSpend(_: ActionState, form: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const since = String(form.get("since") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) return { error: "Pick a start date." };
+  const res = await backfillApis(since, "manual");
+  revalidatePath("/", "layout");
+  const text = res.map(r => `${r.source}: ${r.status} — ${r.message}`).join("\n");
+  return res.some(r => r.status === "error") ? { error: text } : { ok: text };
 }

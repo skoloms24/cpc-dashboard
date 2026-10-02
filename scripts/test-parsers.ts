@@ -20,6 +20,8 @@ import { weekStartOf } from "../lib/week";
       const tot: Record<string, number> = {};
       for (const r of p.rows) tot[r.key] = Math.round(((tot[r.key] || 0) + r.amount) * 100) / 100;
       console.log(`${f}: ${p.platform} rows=${p.rows.length} totals=${JSON.stringify(tot)}`);
+    } else if (p.kind === "sheet") {
+      console.log(`${f}: SPEND SHEET rows=${p.rows.length} first=${JSON.stringify(p.rows[0])}`);
     } else console.log(`${f}: UNKNOWN (${p.reason})`);
   }
 })();

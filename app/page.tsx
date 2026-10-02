@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { availableWeeks, loadWeeks, blankWeek, ClientWeek } from "@/lib/metrics";
-import { addDays, shortWeek, weekLabel } from "@/lib/week";
+import { addDays, weekLabel, lastCompletedWeek } from "@/lib/week";
 import { ALL_CHANNELS, CHANNEL_COLORS, PAID_CHANNELS } from "@/lib/channels";
 import { money, int } from "@/lib/format";
 import { clientColor } from "@/lib/palette";
 import { WeekPicker } from "@/components/WeekPicker";
+import { RangePicker } from "@/components/RangePicker";
+import { parseRange, rangeStart, weekTick, RANGES } from "@/lib/range";
 import { TrendLines, StackedBars } from "@/components/Charts";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +18,7 @@ function Status({ cw }: { cw: ClientWeek }) {
   return <span className="pill good">Complete</span>;
 }
 
-export default async function Overview({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
+export default async function Overview({ searchParams }: { searchParams: Promise<{ week?: string; range?: string }> }) {
   const weeks = await availableWeeks();
   if (!weeks.length) {
     return (
@@ -26,13 +28,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </main>
     );
   }
-  const { week } = await searchParams;
-  const current = week && weeks.includes(week) ? week : weeks[0];
-  const from = addDays(current, -7 * 11);
-  const { weeks: data, clients } = await loadWeeks(from, current);
+  const sp = await searchParams;
+  // Default to the last finished week; the week in progress is one click forward.
+  const current = sp.week && weeks.includes(sp.week) ? sp.week : (weeks.find(w => w <= lastCompletedWeek()) ?? weeks[0]);
+  const range = parseRange(sp.range);
+  const from = rangeStart(range, current, weeks[weeks.length - 1]);
+  const prevWeekStart = addDays(current, -7);
+  const { weeks: data, clients } = await loadWeeks(from < prevWeekStart ? from : prevWeekStart, current);
 
   const thisWeek = clients.map(c => data.find(d => d.client.id === c.id && d.weekStart === current) ?? blankWeek(c, current));
-  const prev = new Map(data.filter(d => d.weekStart === addDays(current, -7)).map(d => [d.client.id, d]));
+  const prev = new Map(data.filter(d => d.weekStart === prevWeekStart).map(d => [d.client.id, d]));
 
   const totalCands = thisWeek.reduce((a, c) => a + c.total, 0);
   const prevCands = [...prev.values()].reduce((a, c) => a + c.total, 0);
@@ -41,23 +46,30 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const paidCands = withSpend.reduce((a, c) => a + c.paidCandidates, 0);
   const needs = thisWeek.filter(c => c.missing.length || c.total === 0).length;
 
-  // Chart: paid CPC per client per week
+  // Chart: paid CPC per client per week across the chosen range, plus all clients combined
   const weekList: string[] = [];
   for (let w = from; w <= current; w = addDays(w, 7)) weekList.push(w);
-  const activeClients = clients.filter(c => data.some(d => d.client.id === c.id));
+  const long = weekList.length > 52;
+  const activeClients = clients.filter(c => data.some(d => d.client.id === c.id && d.paidCPC != null));
   const cpcTrend = weekList
     .map(w => {
-      const row: Record<string, string | number | null> = { week: shortWeek(w) };
-      let any = false;
+      const row: Record<string, string | number | null> = { week: weekTick(w, long) };
+      let spend = 0, cands = 0, any = false;
       for (const c of activeClients) {
         const d = data.find(x => x.client.id === c.id && x.weekStart === w);
         row[c.slug] = d?.paidCPC ?? null;
-        if (d?.paidCPC != null) any = true;
+        if (d?.paidCPC != null) { any = true; spend += d.spendTotal || 0; cands += d.paidCandidates; }
       }
+      row.__all = any && cands ? Math.round((spend / cands) * 100) / 100 : null;
       return any ? row : null;
     })
     .filter((r): r is Record<string, string | number | null> => !!r);
-  const clientSeries = activeClients.map((c, i) => ({ key: c.slug, label: c.name, color: clientColor(i) }));
+  const clientSeries = [
+    { key: "__all", label: "All clients", color: "#5d6b7c", dashed: true, width: 2.5 },
+    ...activeClients.map((c, i) => ({ key: c.slug, label: c.name, color: clientColor(i) })),
+  ];
+  const firstWithData = cpcTrend.length ? weekList.find(w => weekTick(w, long) === cpcTrend[0].week) : undefined;
+  const rangeLabel = RANGES.find(r => r.key === range)!.label;
 
   // Chart: candidates by source this week
   const channelsPresent = ALL_CHANNELS.filter(ch => thisWeek.some(c => c.byChannel[ch]));
@@ -71,7 +83,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     <main>
       <div className="pagehead">
         <div><div className="eyebrow">Weekly cost per candidate · Sun–Sat</div><h1>Overview</h1></div>
-        <WeekPicker weeks={weeks} current={current} basePath="/" />
+        <WeekPicker weeks={weeks} current={current} basePath="/" extra={`&range=${range}`} />
       </div>
 
       <div className="kpis">
@@ -84,6 +96,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <div className="kpi"><div className="k">Need attention</div><div className="v">{needs}</div>
           <div className="d">{needs ? "Missing spend or Zoho report" : "Every client is complete"}</div></div>
       </div>
+
+      <section className="card">
+        <div className="card-head">
+          <div><h3>Paid CPC over time</h3>
+            <p className="hint">{range === "all" && firstWithData ? `Every week since ${new Date(firstWithData + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}` : rangeLabel} through {weekLabel(current)} · dashed line is all clients combined</p></div>
+          <RangePicker current={range} basePath="/" week={current} />
+        </div>
+        <TrendLines data={cpcTrend} series={clientSeries} height={320} />
+      </section>
 
       <section className="section">
         <div className="section-head"><h2>Clients, {weekLabel(current)}</h2></div>
@@ -100,7 +121,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 const delta = p ? cw.total - p.total : null;
                 return (
                   <tr key={cw.client.id}>
-                    <td className="strong"><Link href={`/clients/${cw.client.slug}?week=${current}`}>{cw.client.name}</Link></td>
+                    <td className="strong"><Link href={`/clients/${cw.client.slug}?week=${current}&range=${range}`}>{cw.client.name}</Link></td>
                     <td className="r"><span className="big">{cw.total}</span>{delta != null && <span className="tag"> {delta >= 0 ? "+" : ""}{delta}</span>}</td>
                     {PAID_CHANNELS.map(ch => (
                       <td key={ch} className="r num">{ch in cw.channelCPC ? (cw.channelCPC[ch] == null ? <span className="dim">{cw.spend[ch] ? "—" : "needs spend"}</span> : money(cw.channelCPC[ch]!)) : <span className="zero">·</span>}</td>
@@ -117,11 +138,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </section>
 
-      <div className="grid2">
-        <section className="card">
-          <div><h3>Paid CPC by client</h3><p className="hint">Last 12 weeks</p></div>
-          <TrendLines data={cpcTrend} series={clientSeries} />
-        </section>
+      <div>
         <section className="card">
           <div><h3>Candidates by source</h3><p className="hint">{weekLabel(current)}</p></div>
           <StackedBars data={bySource} xKey="client" horizontal height={Math.max(200, 70 + bySource.length * 48)}

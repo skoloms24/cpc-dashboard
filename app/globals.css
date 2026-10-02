@@ -118,3 +118,9 @@ details summary { cursor: pointer; font-weight: 600; }
 .msg.bad { background: var(--bad-soft); color: var(--bad); }
 .msg.good { background: var(--good-soft); color: var(--good); }
 details.card:not([open]) { gap: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg a { padding: 5px 11px; font-size: 13px; font-weight: 600; color: var(--muted); border-left: 1px solid var(--line); }
+.seg a:first-child { border-left: 0; }
+.seg a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.seg a.on { background: var(--accent-soft); color: var(--accent); }
+.card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px 16px; }

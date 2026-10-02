@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 
-export type Series = { key: string; label: string; color: string };
+export type Series = { key: string; label: string; color: string; dashed?: boolean; width?: number };
 type Row = Record<string, string | number | null>;
 
 const axis = { stroke: "currentColor", tick: { fill: "currentColor", fontSize: 12 }, tickLine: false } as const;
@@ -22,13 +22,14 @@ export function TrendLines({ data, series, money = true, height = 280 }: { data:
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 4 }}>
           <CartesianGrid stroke="currentColor" strokeOpacity={0.15} vertical={false} />
-          <XAxis dataKey="week" {...axis} />
+          <XAxis dataKey="week" {...axis} minTickGap={18} />
           <YAxis {...axis} width={money ? 64 : 44} tickFormatter={v => (money ? "$" + v : String(v))} />
           <Tooltip {...tooltipStyle} formatter={(v) => (money ? fmtMoney(v) : fmtInt(v))} />
           <Legend wrapperStyle={{ fontSize: 12.5 }} />
           {series.map(s => (
-            <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2.25}
-              dot={{ r: 3, fill: s.color, strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} />
+            <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={s.width ?? 2.25}
+              strokeDasharray={s.dashed ? "6 4" : undefined}
+              dot={data.length > 26 ? false : { r: 3, fill: s.color, strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} />
           ))}
         </LineChart>
       </ResponsiveContainer>
@@ -51,7 +52,7 @@ export function StackedBars({ data, series, xKey, money = false, height = 280, h
             </>
           ) : (
             <>
-              <XAxis dataKey={xKey} {...axis} />
+              <XAxis dataKey={xKey} {...axis} minTickGap={14} />
               <YAxis {...axis} width={money ? 64 : 40} tickFormatter={v => (money ? "$" + v : String(v))} />
             </>
           )}

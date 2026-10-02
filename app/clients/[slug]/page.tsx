@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { availableWeeks, loadWeeks, positionsFor, blankWeek } from "@/lib/metrics";
-import { addDays, shortWeek, weekLabel } from "@/lib/week";
+import { addDays, weekLabel, lastCompletedWeek } from "@/lib/week";
 import { ALL_CHANNELS, CHANNEL_COLORS, PAID_CHANNELS, PaidChannel, isPaid } from "@/lib/channels";
 import { money, int } from "@/lib/format";
 import { WeekPicker } from "@/components/WeekPicker";
+import { RangePicker } from "@/components/RangePicker";
+import { parseRange, rangeStart, weekTick, RANGES } from "@/lib/range";
 import { TrendLines, StackedBars } from "@/components/Charts";
 import { SpendForm } from "@/components/Forms";
 
@@ -12,14 +14,17 @@ export const dynamic = "force-dynamic";
 
 const SOURCE_LABEL: Record<string, string> = { manual: "entered by hand", api: "from API", email: "from emailed report", upload: "from uploaded file", mixed: "from several sources" };
 
-export default async function ClientPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ week?: string }> }) {
+export default async function ClientPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ week?: string; range?: string }> }) {
   const { slug } = await params;
-  const { week } = await searchParams;
+  const sp = await searchParams;
   const weeks = await availableWeeks();
-  const current = week && weeks.includes(week) ? week : weeks[0];
+  // Default to the last finished week; the week in progress is one click forward.
+  const current = sp.week && weeks.includes(sp.week) ? sp.week : (weeks.find(w => w <= lastCompletedWeek()) ?? weeks[0]);
   if (!current) notFound();
-  const from = addDays(current, -7 * 11);
-  const { weeks: data, clients } = await loadWeeks(from, current);
+  const range = parseRange(sp.range);
+  const prevWeekStart = addDays(current, -7);
+  const { weeks: all, clients } = await loadWeeks(weeks[weeks.length - 1] < prevWeekStart ? weeks[weeks.length - 1] : prevWeekStart, current);
+  const data = all;
   const client = clients.find(c => c.slug === slug);
   if (!client) notFound();
 
@@ -38,20 +43,23 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const posChannels = ALL_CHANNELS.filter(ch => positions.some(p => p.channel === ch));
   const cell = (pos: string, ch: string) => positions.find(p => p.position === pos && p.channel === ch)?.n ?? 0;
 
-  // Trends
+  // Trends over the chosen range (all time starts at this client's first week with data)
+  const firstWeek = mine.length ? mine[0].weekStart : current;
+  const from = range === "all" ? firstWeek : rangeStart(range, current, firstWeek);
   const weekList: string[] = [];
   for (let w = from; w <= current; w = addDays(w, 7)) weekList.push(w);
+  const long = weekList.length > 52;
   const trendChannels = ALL_CHANNELS.filter(ch => mine.some(d => d.byChannel[ch]));
   const candTrend = weekList.map(w => {
     const d = mine.find(x => x.weekStart === w);
-    const row: Record<string, string | number> = { week: shortWeek(w) };
+    const row: Record<string, string | number> = { week: weekTick(w, long) };
     for (const ch of trendChannels) row[ch] = d?.byChannel[ch] || 0;
     return row;
   });
   const cpcChannels = PAID_CHANNELS.filter(ch => mine.some(d => d.channelCPC[ch] != null));
   const cpcTrend = weekList.map(w => {
     const d = mine.find(x => x.weekStart === w);
-    const row: Record<string, string | number | null> = { week: shortWeek(w), Blended: d?.paidCPC ?? null };
+    const row: Record<string, string | number | null> = { week: weekTick(w, long), Blended: d?.paidCPC ?? null };
     for (const ch of cpcChannels) row[ch] = d?.channelCPC[ch] ?? null;
     return row;
   }).filter(r => Object.entries(r).some(([k, v]) => k !== "week" && v != null));
@@ -61,10 +69,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
     <main>
       <div className="pagehead">
         <div>
-          <div className="eyebrow"><Link href={`/?week=${current}`}>Overview</Link> / Client</div>
+          <div className="eyebrow"><Link href={`/?week=${current}&range=${range}`}>Overview</Link> / Client</div>
           <h1>{client.name}</h1>
         </div>
-        <WeekPicker weeks={weeks} current={current} basePath={`/clients/${client.slug}`} />
+        <WeekPicker weeks={weeks} current={current} basePath={`/clients/${client.slug}`} extra={`&range=${range}`} />
       </div>
 
       <div className="kpis">
@@ -77,6 +85,18 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         <div className="kpi"><div className="k">Blended CPC</div><div className="v">{money(cw.blendedCPC)}</div>
           <div className="d">Spend ÷ all candidates</div></div>
       </div>
+
+      <section className="card">
+        <div className="card-head">
+          <div><h3>Cost per candidate over time</h3>
+            <p className="hint">{RANGES.find(r => r.key === range)!.label} through {weekLabel(current)} · each paid channel, dashed line is all paid channels</p></div>
+          <RangePicker current={range} basePath={`/clients/${client.slug}`} week={current} />
+        </div>
+        <TrendLines data={cpcTrend} height={320} series={[
+          { key: "Blended", label: "All paid", color: "#5d6b7c", dashed: true, width: 2.5 },
+          ...cpcChannels.map(ch => ({ key: ch, label: ch, color: CHANNEL_COLORS[ch] })),
+        ]} />
+      </section>
 
       <div className="stack">
         <section className="section">
@@ -91,7 +111,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                   return (
                     <tr key={ch}>
                       <td><span className="swatch" style={{ background: CHANNEL_COLORS[ch] }} />{ch}
-                        {s && <div className="tag">{SOURCE_LABEL[s.source] ?? s.source}{s.updatedBy ? ` · ${s.updatedBy}` : ""}</div>}</td>
+                        {s && <div className="tag">{s.updatedBy?.startsWith("sheet: ") ? `from spend sheet ${s.updatedBy.slice(7)}` : `${SOURCE_LABEL[s.source] ?? s.source}${s.updatedBy ? ` · ${s.updatedBy}` : ""}`}</div>}</td>
                       <td className="r big">{cw.byChannel[ch] || 0}</td>
                       <td className="r">{paid
                         ? <SpendForm key={`${current}-${ch}-${s?.amount ?? "x"}`} clientId={client.id} week={current} channel={ch} amount={s?.amount ?? null} missing={!s} label={`${ch} spend`} />
@@ -129,19 +149,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         </section>
       </div>
 
-      <div className="grid2">
-        <section className="card">
-          <div><h3>Candidates per week</h3><p className="hint">By source, last 12 weeks</p></div>
-          <StackedBars data={candTrend} xKey="week" series={trendChannels.map(ch => ({ key: ch, label: ch, color: CHANNEL_COLORS[ch] }))} />
-        </section>
-        <section className="card">
-          <div><h3>Cost per candidate</h3><p className="hint">Each paid channel and the paid total</p></div>
-          <TrendLines data={cpcTrend} series={[
-            ...cpcChannels.map(ch => ({ key: ch, label: ch, color: CHANNEL_COLORS[ch] })),
-            { key: "Blended", label: "All paid", color: "#5d6b7c" },
-          ]} />
-        </section>
-      </div>
+      <section className="card">
+        <div><h3>Candidates per week</h3><p className="hint">By source · {RANGES.find(r => r.key === range)!.label}</p></div>
+        <StackedBars data={candTrend} xKey="week" series={trendChannels.map(ch => ({ key: ch, label: ch, color: CHANNEL_COLORS[ch] }))} />
+      </section>
     </main>
   );
 }

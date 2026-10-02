@@ -92,17 +92,18 @@ export async function loadWeeks(fromWeek: string, toWeek: string): Promise<{ wee
     const paid = cw.client.channels.filter(ch => (PAID_CHANNELS as readonly string[]).includes(ch)) as PaidChannel[];
     // A channel with spend counts as used even if it isn't listed for the client.
     for (const ch of Object.keys(cw.spend) as PaidChannel[]) if (!paid.includes(ch)) paid.push(ch);
+    // Paid CPC only counts channels that have spend, so a missing channel (e.g. Indeed not entered yet)
+    // never makes CPC look cheaper than it is. Blended CPC needs every channel's spend.
     let total = 0, any = false;
     for (const ch of paid) {
       const s = cw.spend[ch];
       const n = cw.byChannel[ch] || 0;
-      cw.paidCandidates += n;
-      if (s) { total += s.amount; any = true; cw.channelCPC[ch] = n ? r2(s.amount / n) : null; }
+      if (s) { total += s.amount; any = true; cw.paidCandidates += n; cw.channelCPC[ch] = n ? r2(s.amount / n) : null; }
       else { cw.missing.push(ch); cw.channelCPC[ch] = null; }
     }
     cw.spendTotal = any ? r2(total) : null;
     cw.paidCPC = any && cw.paidCandidates ? r2(total / cw.paidCandidates) : null;
-    cw.blendedCPC = any && cw.total ? r2(total / cw.total) : null;
+    cw.blendedCPC = any && !cw.missing.length && cw.total ? r2(total / cw.total) : null;
   }
 
   const weeks = [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.client.name.localeCompare(b.client.name));
@@ -115,7 +116,7 @@ export async function availableWeeks(): Promise<string[]> {
     `SELECT DISTINCT w FROM (
        SELECT to_char(week_start,'YYYY-MM-DD') AS w FROM candidates
        UNION SELECT to_char(day - EXTRACT(DOW FROM day)::int,'YYYY-MM-DD') FROM spend_raw
-     ) x ORDER BY w DESC LIMIT 104`);
+     ) x ORDER BY w DESC`);
   return (rows as any[]).map(r => r.w);
 }
 

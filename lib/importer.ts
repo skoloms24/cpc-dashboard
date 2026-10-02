@@ -4,6 +4,8 @@ import { weekStartOf } from "./week";
 import type { ZohoReport } from "./parse/zoho";
 import type { SpendRow } from "./parse/spend";
 import type { ParsedReport } from "./parse/detect";
+import type { SheetSpendRow } from "./parse/spendSheet";
+import { PAID_CHANNELS } from "./channels";
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ");
 
@@ -39,7 +41,10 @@ export async function importZoho(report: ZohoReport, clientOverride?: Client): P
     ]);
     parts.push(`${rows.length} candidates for week of ${week}`);
   }
-  return `${client.name}: ${parts.join(", ") || "no candidates in file"}`;
+  if (!byWeek.size) return `${client.name}: no candidates in file`;
+  if (byWeek.size <= 3) return `${client.name}: ${parts.join(", ")}`;
+  const ws = [...byWeek.keys()].sort();
+  return `${client.name}: ${report.candidates.length} candidates across ${byWeek.size} weeks (${ws[0]} to ${ws[ws.length - 1]})`;
 }
 
 export async function importSpend(rows: SpendRow[], source: "api" | "email" | "upload"): Promise<string> {
@@ -57,8 +62,38 @@ export async function importSpend(rows: SpendRow[], source: "api" | "email" | "u
   return `${rows[0].platform}: ${rows.length} daily rows, $${total.toFixed(2)} from ${days[0]} to ${days[days.length - 1]}`;
 }
 
+/** Spend typed into a sheet (Indeed history, past numbers). Rows for the same client, week and channel are added together. */
+export async function importSpendSheet(rows: SheetSpendRow[], filename: string): Promise<string> {
+  const clients = await getClients(true);
+  const totals = new Map<string, { clientId: number; week: string; channel: string; amount: number }>();
+  const unknownClients = new Set<string>(), unknownChannels = new Set<string>();
+  for (const r of rows) {
+    const c = clients.find(x => norm(x.name) === norm(r.client) || norm(x.slug) === norm(r.client) || (x.zoho_org && norm(x.zoho_org) === norm(r.client)));
+    const ch = PAID_CHANNELS.find(p => p.toLowerCase() === r.channel.trim().toLowerCase())
+      ?? (/^(facebook|fb|instagram|ig)/i.test(r.channel) ? "Meta" : /^(google|adwords|youtube)/i.test(r.channel) ? "Google" : undefined);
+    if (!c) { unknownClients.add(r.client); continue; }
+    if (!ch) { unknownChannels.add(r.channel); continue; }
+    const week = weekStartOf(r.date), k = `${c.id}|${week}|${ch}`;
+    const e = totals.get(k);
+    if (e) e.amount += r.amount; else totals.set(k, { clientId: c.id, week, channel: ch, amount: r.amount });
+  }
+  if (!totals.size) throw new Error(`No usable rows.${unknownClients.size ? ` Unknown clients: ${[...unknownClients].join(", ")}.` : ""}${unknownChannels.size ? ` Unknown channels: ${[...unknownChannels].join(", ")} (use Meta, Google or Indeed).` : ""}`);
+  const v = [...totals.values()];
+  await db().query(
+    `INSERT INTO spend_manual (client_id, week_start, channel, amount, updated_by)
+     SELECT * FROM unnest($1::int[], $2::date[], $3::text[], $4::numeric[], $5::text[])
+     ON CONFLICT (client_id, week_start, channel) DO UPDATE SET amount = EXCLUDED.amount, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [v.map(x => x.clientId), v.map(x => x.week), v.map(x => x.channel), v.map(x => Math.round(x.amount * 100) / 100), v.map(() => `sheet: ${filename}`.slice(0, 200))]);
+  const weeks = v.map(x => x.week).sort();
+  let msg = `Spend sheet: ${v.length} client-weeks from ${weeks[0]} to ${weeks[weeks.length - 1]}`;
+  if (unknownClients.size) msg += `; skipped unknown clients: ${[...unknownClients].join(", ")}`;
+  if (unknownChannels.size) msg += `; skipped unknown channels: ${[...unknownChannels].join(", ")}`;
+  return msg;
+}
+
 export async function importParsed(p: ParsedReport, source: "email" | "upload"): Promise<string> {
   if (p.kind === "zoho") return importZoho(p.report);
+  if (p.kind === "sheet") return importSpendSheet(p.rows, p.filename);
   if (p.kind === "spend") return importSpend(p.rows, source);
   throw new Error(`${p.filename}: ${p.reason}`);
 }
