@@ -1,6 +1,6 @@
 # All-Star CPC Dashboard
 
-Weekly candidates, ad spend and cost per candidate (CPC) for every All-Star Talent client, in one place. Only people with an **@allstartalent.us** Microsoft account can sign in.
+Weekly candidates, ad spend and cost per candidate (CPC) for every All-Star Talent client, in one place. Sign-in is Google Workspace SSO, the same as the SMS Portal: only accounts on your company domain (`ALLOWED_EMAIL_DOMAIN`) get in.
 
 **What it does**
 
@@ -12,12 +12,12 @@ Weekly candidates, ad spend and cost per candidate (CPC) for every All-Star Tale
 
 | Data | Now | Later |
 |---|---|---|
-| Candidates by source and position | Zoho scheduled report emailed to Outlook (or uploaded) | same |
-| Meta spend | Meta scheduled report emailed to Outlook (or uploaded) | Meta Marketing API (add 2 keys) |
-| Google spend | Google Ads manager-account report emailed to Outlook (or uploaded) | Google Ads API (add 5 keys) |
+| Candidates by source and position | Zoho export uploaded on the Admin page (or emailed, see section 3) | Zoho API |
+| Meta spend | Meta export uploaded (or emailed) | Meta Marketing API (add 2 keys) |
+| Google spend | Google Ads export uploaded (or emailed) | Google Ads API (add 5 keys) |
 | Indeed spend | typed in on the client page | same |
 
-Every Monday at 16:00 UTC (9 AM Pacific in summer, 8 AM in winter), Vercel Cron calls `/api/cron/weekly`. The job reads new report emails, pulls API spend if the API keys are set, and re-pulls the last two full weeks so late adjustments get picked up.
+Every Monday at 16:00 UTC (9 AM Pacific in summer, 8 AM in winter), Vercel Cron calls `/api/cron/weekly`. The job pulls API spend for whatever API keys are set, re-pulling the last two full weeks so late adjustments get picked up. If the optional Outlook settings are present, it also reads new report emails.
 
 ---
 
@@ -31,38 +31,36 @@ Every Monday at 16:00 UTC (9 AM Pacific in summer, 8 AM in winter), Vercel Cron 
 
 > Vercel's free Hobby plan is for non-commercial use. A business should use Pro, which also gives the weekly job up to 5 minutes to run.
 
-## 2. Microsoft sign-in (allstartalent.us only)
+## 2. Google sign-in (your Workspace domain only)
 
-In [entra.microsoft.com](https://entra.microsoft.com) → **App registrations → New registration**:
+This is the same setup as the SMS Portal. You can reuse that project's Google OAuth client.
 
-- **Name:** CPC Dashboard
-- **Supported account types:** *Accounts in this organizational directory only (single tenant)*. This is what keeps everyone outside allstartalent.us out. The app also checks the email domain itself.
-- **Redirect URI:** Web → `https://<your-vercel-domain>/api/auth/callback/microsoft-entra-id`. If you add a custom domain later, add its callback URL too.
+1. [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services → Credentials**.
+2. Open the SMS Portal's **OAuth 2.0 Client ID** (or create a new *Web application* client).
+3. Under **Authorized redirect URIs**, add `https://<this app's domain>/api/auth/callback/google` and save.
+4. Set these in Vercel:
+   - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: from that client.
+   - `ALLOWED_EMAIL_DOMAIN`: the same value as the SMS Portal's `AST_WORKSPACE_DOMAIN`.
+   - `AUTH_URL`: this app's public URL.
+   - `AUTH_SECRET`: `openssl rand -base64 32`.
+   - `ADMIN_EMAILS`: comma-separated.
 
-Then:
+**Lockout by design:** if `ALLOWED_EMAIL_DOMAIN` is empty, no one can sign in. A missing setting locks everyone out instead of letting anyone in.
 
-- **Overview** page: copy the **Application (client) ID** → `AUTH_MICROSOFT_ENTRA_ID_ID`, and the **Directory (tenant) ID** → used in `AUTH_MICROSOFT_ENTRA_ID_ISSUER` (`https://login.microsoftonline.com/<tenant id>/v2.0`) and `GRAPH_TENANT_ID`.
-- **Certificates & secrets → New client secret:** copy the **Value** → `AUTH_MICROSOFT_ENTRA_ID_SECRET`. It expires (24 months max). Put a reminder on your calendar to replace it.
-- `AUTH_SECRET`: any long random string (`npx auth secret` makes one).
-- `ADMIN_EMAILS`: people who can see the Admin page, comma-separated.
+**Use one domain:** like the SMS Portal, pick one domain for this app (a custom domain or the `.vercel.app` one), put it in `AUTH_URL`, and use only that. Starting sign-in on one host and finishing on another breaks the login cookie.
 
-## 3. Outlook reports (automatic import from email)
+## 3. Report emails from Outlook (optional)
 
-**Give the app permission to read the reports.** In the same app registration, go to **API permissions → Add → Microsoft Graph → Application permissions → Mail.Read → Add**, then **Grant admin consent**.
-By default this lets the app read any mailbox in the tenant. To limit it to just `sam@allstartalent.us`, set up an Exchange Online application access policy or RBAC for Applications scoped to that mailbox. This is recommended.
+Without this, an admin uploads the weekly Zoho, Meta and Google exports on the Admin page. That takes about one minute: drag all the files in at once. The Meta and Google APIs (sections 4 and 5) replace their uploads entirely.
 
-Set `GRAPH_TENANT_ID`, `GRAPH_MAILBOX=sam@allstartalent.us` and `GRAPH_FOLDER=CPC Reports`.
+To have the app pick reports up from Outlook on its own instead, a Microsoft 365 admin registers an app in Microsoft Entra. Create it as a **single tenant** app, add a client secret, then under **API permissions** add Microsoft Graph → *Application* → **Mail.Read** and grant admin consent. Then set `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_MAILBOX` and `GRAPH_FOLDER`. In Outlook, create a **CPC Reports** folder and add a rule that moves the reports into it.
 
-**In Outlook**, create a folder called **CPC Reports** (top level or inside Inbox). Add a rule that moves the report emails there (from Zoho, Meta and Google).
+**Report formats** (uploaded or emailed; the app recognizes each one by its column headings):
 
-**Set up the scheduled reports.** All of them: weekly, Monday early morning, sent to sam@allstartalent.us.
-
-- **Zoho (one per client):** Reports → your report (Created Time = Last Week, with UTM Source and the position Yes/No fields) → Scheduled Reports → **CSV** or XLSX. Not XLS.
-  The app matches the report to a client by the "Generated by …" name, which must equal the client's *Zoho account name* in Admin.
-- **Meta (one for everything):** Ads Manager → Ads Reporting → rows **Campaign name** and **Day**, metric **Amount spent**, Last 7 days → Schedule, attached as CSV/XLSX.
-- **Google Ads (one for everything):** manager account → All accounts → Report editor → Table with **Account**, **Day**, **Cost** → Last 7 days → Schedule, CSV.
-
-The app figures out which kind of report each attachment is by its column headings. Files it has already imported are skipped.
+- **Zoho (one per client):** a report with Created Time = Last Week, UTM Source, and the position Yes/No fields. Export as **CSV** or XLSX, not XLS.
+  The app matches it to a client by the "Generated by …" name, which must equal the client's *Zoho account name* in Admin.
+- **Meta (one for everything):** Ads Reporting → rows **Campaign name** and **Day**, metric **Amount spent**.
+- **Google Ads (one for everything):** manager account → All accounts → Report editor → **Account**, **Day**, **Cost**.
 
 ## 4. Meta Marketing API (optional, replaces the Meta email)
 
@@ -90,7 +88,7 @@ The job lists every enabled account under the manager account and pulls daily co
    - **Meta campaigns containing:** text that appears in that client's campaign names, e.g. `Placer`.
    - **Google Ads account names or IDs.**
    - **Default position:** for single-position clients such as MSHP (Trooper).
-2. In their Zoho, schedule the weekly report to sam@allstartalent.us.
+2. Upload their weekly Zoho export, or schedule it to the Outlook folder if you set that up.
 3. After the next import, check **Spend that needs a client** on the Admin page. Any campaign or account that didn't match a client shows up there, and you can assign it in one click.
 
 **How the numbers are calculated**

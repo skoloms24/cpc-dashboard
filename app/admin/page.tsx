@@ -21,7 +21,7 @@ export default async function AdminPage() {
   const log = (await db().query(`SELECT ran_at, trigger, source, status, message FROM import_log ORDER BY ran_at DESC LIMIT 25`)) as any[];
 
   const sources = [
-    { name: "Outlook reports", on: outlookConfigured(), note: `${process.env.GRAPH_MAILBOX || "mailbox not set"} → “${process.env.GRAPH_FOLDER || "CPC Reports"}” folder` },
+    { name: "Outlook report emails", on: outlookConfigured(), note: outlookConfigured() ? `${process.env.GRAPH_MAILBOX} → “${process.env.GRAPH_FOLDER || "CPC Reports"}” folder` : "Optional. Without it, upload the weekly exports below." },
     { name: "Meta API", on: metaConfigured(), note: "Daily campaign spend, replaces the emailed Meta report" },
     { name: "Google Ads API", on: googleConfigured(), note: "Daily cost for every account under the manager account" },
   ];

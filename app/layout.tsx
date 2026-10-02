@@ -26,7 +26,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {email && (
           <header className="topbar">
             <div className="topbar-in">
-              <Link href="/" className="brand">All-Star <span>CPC</span></Link>
+              <Link href="/" className="brand" aria-label="All-Star Talent CPC home">
+                <picture>
+                  <source srcSet="/brand/ast-logo-white.png" media="(prefers-color-scheme: dark)" />
+                  <img src="/brand/ast-logo.png" alt="All-Star Talent" width={94} height={32} />
+                </picture>
+                <span>CPC</span>
+              </Link>
               <nav className="nav">
                 <Link href="/">Overview</Link>
                 {isAdmin(email) && <Link href="/admin">Admin</Link>}

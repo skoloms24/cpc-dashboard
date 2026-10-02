@@ -1,18 +1,19 @@
-// Reads report attachments from an Outlook folder through Microsoft Graph (app-only, Mail.Read).
+// OPTIONAL. Reads report attachments from an Outlook folder through Microsoft Graph (app-only, Mail.Read).
+// Only runs when the GRAPH_* settings are present; the dashboard works without it (uploads + APIs).
 import { db } from "../db";
 import { parseReportFile } from "../parse/detect";
 import { importParsed } from "../importer";
 
 export const outlookConfigured = () =>
-  !!(process.env.GRAPH_TENANT_ID && process.env.AUTH_MICROSOFT_ENTRA_ID_ID && process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET && process.env.GRAPH_MAILBOX);
+  !!(process.env.GRAPH_TENANT_ID && process.env.GRAPH_CLIENT_ID && process.env.GRAPH_CLIENT_SECRET && process.env.GRAPH_MAILBOX);
 
 async function graphToken(): Promise<string> {
   const res = await fetch(`https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: process.env.AUTH_MICROSOFT_ENTRA_ID_ID!,
-      client_secret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET!,
+      client_id: process.env.GRAPH_CLIENT_ID!,
+      client_secret: process.env.GRAPH_CLIENT_SECRET!,
       scope: "https://graph.microsoft.com/.default",
       grant_type: "client_credentials",
     }),

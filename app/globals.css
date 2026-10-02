@@ -29,7 +29,9 @@ a:hover { text-decoration: underline; }
 .topbar { background: var(--surface); border-bottom: 1px solid var(--line); }
 .topbar-in { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .brand { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--ink); letter-spacing: -0.01em; }
-.brand span { color: var(--accent); }
+.brand { display: inline-flex; align-items: center; gap: 10px; }
+.brand img { display: block; height: 32px; width: auto; }
+.brand span { color: var(--accent); border-left: 1px solid var(--line); padding-left: 10px; }
 .nav { display: flex; gap: 4px; flex: 1; }
 .nav a { color: var(--muted); font-weight: 600; padding: 6px 10px; border-radius: 6px; }
 .nav a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
