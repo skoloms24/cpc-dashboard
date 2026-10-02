@@ -33,7 +33,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const prev = mine.find(d => d.weekStart === addDays(current, -7));
   const positions = await positionsFor(client.id, current);
 
-  const paidChannels = [...new Set([...client.channels.filter(isPaid), ...(Object.keys(cw.spend) as PaidChannel[])])]
+  const paidChannels = [...new Set([...client.channels.filter(isPaid), ...cw.running, ...cw.off, ...(Object.keys(cw.spend) as PaidChannel[])])]
     .sort((a, b) => PAID_CHANNELS.indexOf(a) - PAID_CHANNELS.indexOf(b));
   const sourceRows = [...paidChannels, ...ALL_CHANNELS.filter(ch => !isPaid(ch) && cw.byChannel[ch])];
 
@@ -102,7 +102,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
 
       <div className="stack">
         <section className="section">
-          <div className="section-head"><h2>By source</h2><span className="tag">Type spend into any box; it saves when you click away</span></div>
+          <div className="section-head"><h2>By source</h2><span className="tag">Type spend into any box; it saves when you click away. Enter 0 for a week a channel was off.</span></div>
           <div className="tablebox">
             <table>
               <thead><tr><th>Source</th><th className="r">Candidates</th><th className="r">Spend</th><th className="r">CPC</th></tr></thead>
@@ -110,15 +110,18 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                 {sourceRows.map(ch => {
                   const paid = isPaid(ch);
                   const s = paid ? cw.spend[ch] : undefined;
+                  const isOff = paid && !cw.running.includes(ch as PaidChannel);
+                  const isMissing = paid && cw.missing.includes(ch as PaidChannel);
                   return (
                     <tr key={ch}>
                       <td><span className="swatch" style={{ background: CHANNEL_COLORS[ch] }} />{ch}
-                        {s && <div className="tag">{s.updatedBy?.startsWith("sheet: ") ? `from spend sheet ${s.updatedBy.slice(7)}` : `${SOURCE_LABEL[s.source] ?? s.source}${s.updatedBy ? ` · ${s.updatedBy}` : ""}`}</div>}</td>
+                        {isOff ? <div className="tag">{s ? "marked off this week" : "no spend recorded this week"}{cw.byChannel[ch] ? ", so these candidates count as free" : ""}</div>
+                          : s && <div className="tag">{s.updatedBy?.startsWith("sheet: ") ? `from spend sheet ${s.updatedBy.slice(7)}` : `${SOURCE_LABEL[s.source] ?? s.source}${s.updatedBy ? ` · ${s.updatedBy}` : ""}`}</div>}</td>
                       <td className="r big">{cw.byChannel[ch] || 0}</td>
                       <td className="r">{paid
-                        ? <SpendForm key={`${current}-${ch}-${s?.amount ?? "x"}`} clientId={client.id} week={current} channel={ch} amount={s?.amount ?? null} missing={!s} label={`${ch} spend`} />
+                        ? <SpendForm key={`${current}-${ch}-${s?.amount ?? "x"}`} clientId={client.id} week={current} channel={ch} amount={s?.amount ?? null} missing={isMissing} label={`${ch} spend`} />
                         : <span className="dim">no spend</span>}</td>
-                      <td className="r big">{paid ? money(cw.channelCPC[ch] ?? null) : <span className="dim">—</span>}</td>
+                      <td className="r big">{paid && !isOff ? money(cw.channelCPC[ch] ?? null) : <span className="dim">{isOff ? (s ? "off" : "free") : "—"}</span>}</td>
                     </tr>
                   );
                 })}

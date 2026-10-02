@@ -46,11 +46,14 @@ export type Client = {
   id: number; slug: string; name: string; zoho_org: string | null;
   channels: string[]; meta_match: string[]; google_match: string[];
   default_position: string | null; position_fields: string[]; source_map: Record<string, string>; active: boolean;
+  /** Week each currently-running channel started. Missing-spend warnings only apply from this week on. */
+  channel_since: Record<string, string>;
 };
 
 /** Small schema updates added after the first release. Idempotent; runs once per server instance. */
 const MIGRATIONS = [
   `ALTER TABLE clients ADD COLUMN IF NOT EXISTS position_fields TEXT[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE clients ADD COLUMN IF NOT EXISTS channel_since JSONB NOT NULL DEFAULT '{}'`,
 ];
 let migrated: Promise<void> | null = null;
 export function ensureSchema(): Promise<void> {
@@ -63,7 +66,7 @@ export function ensureSchema(): Promise<void> {
 export async function getClients(includeInactive = false): Promise<Client[]> {
   await ensureSchema();
   const rows = await db().query(
-    `SELECT id, slug, name, zoho_org, channels, meta_match, google_match, default_position, position_fields, source_map, active
+    `SELECT id, slug, name, zoho_org, channels, meta_match, google_match, default_position, position_fields, source_map, active, channel_since
        FROM clients ${includeInactive ? "" : "WHERE active"} ORDER BY name`);
   return rows as Client[];
 }

@@ -16,16 +16,17 @@ for (const stmt of schema.split(/;\s*$/m).map(s => s.trim()).filter(Boolean)) {
 
 const clients = [
   { slug: "placer-county-so", name: "Placer County Sheriff's Office", zoho_org: "Placer County Sheriff's Office",
-    channels: ["Meta", "Indeed"], meta_match: ["Placer"], google_match: [], default_position: null },
+    channels: ["Meta", "Indeed"], meta_match: ["Placer"], google_match: [], default_position: null, position_fields: [],
+    channel_since: { Meta: "2026-09-20", Indeed: "2026-09-20" } },
   { slug: "mshp", name: "Missouri State Highway Patrol", zoho_org: "Missouri State Highway Patrol",
     channels: ["Meta", "Google"], meta_match: ["MSHP", "Missouri"], google_match: ["Missouri State Highway Patrol", "MSHP"],
-    default_position: "Trooper" },
+    default_position: null, position_fields: ["Trooper", "Commercial Vehicle Officer"], channel_since: { Meta: "2026-09-20", Google: "2026-09-20" } },
 ];
 for (const c of clients) {
   await sql.query(
-    `INSERT INTO clients (slug, name, zoho_org, channels, meta_match, google_match, default_position)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING`,
-    [c.slug, c.name, c.zoho_org, c.channels, c.meta_match, c.google_match, c.default_position]);
+    `INSERT INTO clients (slug, name, zoho_org, channels, meta_match, google_match, default_position, position_fields, channel_since)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (slug) DO NOTHING`,
+    [c.slug, c.name, c.zoho_org, c.channels, c.meta_match, c.google_match, c.default_position, c.position_fields, JSON.stringify(c.channel_since)]);
 }
 console.log("Database ready.");
 await pool?.end();

@@ -8,6 +8,7 @@ import { parseReportFile } from "@/lib/parse/detect";
 import { importParsed } from "@/lib/importer";
 import { logImport } from "@/lib/db";
 import { PAID_CHANNELS } from "@/lib/channels";
+import { weekStartOf, lastCompletedWeek } from "@/lib/week";
 
 async function requireUser() {
   const s = await auth();
@@ -84,6 +85,12 @@ export async function saveClient(_: ActionState, form: FormData): Promise<Action
   const name = String(form.get("name") ?? "").trim();
   if (!name) return { error: "Name is required." };
   const channels = PAID_CHANNELS.filter(c => form.get(`ch_${c}`) === "on");
+  // Week each running channel started; spend is flagged as missing from that week on.
+  const channelSince: Record<string, string> = {};
+  for (const c of channels) {
+    const d = String(form.get(`since_${c}`) ?? "");
+    channelSince[c] = /^\d{4}-\d{2}-\d{2}$/.test(d) ? weekStartOf(d) : lastCompletedWeek();
+  }
   const sourceMap: Record<string, string> = {};
   for (const line of list(form.get("source_map"))) {
     const [k, v] = line.split("=").map(s => s?.trim());
@@ -91,13 +98,13 @@ export async function saveClient(_: ActionState, form: FormData): Promise<Action
   }
   const vals = [name, String(form.get("zoho_org") ?? "").trim() || null, channels, list(form.get("meta_match")),
     list(form.get("google_match")), String(form.get("default_position") ?? "").trim() || null, JSON.stringify(sourceMap),
-    form.get("active") === "on", list(form.get("position_fields"))];
+    form.get("active") === "on", list(form.get("position_fields")), JSON.stringify(channelSince)];
   if (id) {
     await db().query(`UPDATE clients SET name=$1, zoho_org=$2, channels=$3, meta_match=$4, google_match=$5, default_position=$6,
-                      source_map=$7::jsonb, active=$8, position_fields=$9 WHERE id=$10`, [...vals, id]);
+                      source_map=$7::jsonb, active=$8, position_fields=$9, channel_since=$10::jsonb WHERE id=$11`, [...vals, id]);
   } else {
-    await db().query(`INSERT INTO clients (name, zoho_org, channels, meta_match, google_match, default_position, source_map, active, position_fields, slug)
-                      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)`, [...vals, slugify(name) || `client-${Date.now()}`]);
+    await db().query(`INSERT INTO clients (name, zoho_org, channels, meta_match, google_match, default_position, source_map, active, position_fields, channel_since, slug)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10::jsonb,$11)`, [...vals, slugify(name) || `client-${Date.now()}`]);
   }
   revalidatePath("/", "layout");
   return { ok: id ? "Client saved." : "Client added." };

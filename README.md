@@ -102,7 +102,9 @@ Every import is split into Sunday–Saturday weeks automatically, so a file can 
 
    *Week* can be any date in the week. Rows for the same client, week and channel are added together, so monthly Indeed invoices can be entered against the first week of the month, or split across its weeks. *Client* must match a client name in Admin.
 
-**How missing spend is handled:** if a week is missing spend for one channel (for example, no Indeed number yet), *Paid CPC* uses only the channels that have spend. A missing number therefore never makes CPC look better than it was. *Blended CPC* stays blank until every channel's spend is in.
+**Channels that turn on and off:** a channel counts as paid in any week where spend was recorded for it, whether imported or typed in. In weeks with no spend, its candidates count as free: they're left out of paid CPC and included in blended CPC. Entering **$0** marks a week as explicitly off.
+Under Admin → Clients, check the channels that are **running now**, with the week they started. From that week on, a week without spend gets a "needs spend" flag. Uncheck a channel when its ads are turned off. Earlier weeks are never flagged.
+Paid CPC uses only channels with spend, so a missing number never makes CPC look cheaper than it was. Blended CPC stays blank while any running channel is missing spend.
 
 ## 6. Adding a client
 

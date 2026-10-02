@@ -126,7 +126,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     <td className="strong"><Link href={`/clients/${cw.client.slug}?week=${current}&range=${range}`}>{cw.client.name}</Link></td>
                     <td className="r"><span className="big">{cw.total}</span>{delta != null && <span className="tag"> {delta >= 0 ? "+" : ""}{delta}</span>}</td>
                     {PAID_CHANNELS.map(ch => (
-                      <td key={ch} className="r num">{ch in cw.channelCPC ? (cw.channelCPC[ch] == null ? <span className="dim">{cw.spend[ch] ? "—" : "needs spend"}</span> : money(cw.channelCPC[ch]!)) : <span className="zero">·</span>}</td>
+                      <td key={ch} className="r num">{cw.missing.includes(ch) ? <span className="dim">needs spend</span>
+                        : cw.running.includes(ch) ? money(cw.channelCPC[ch] ?? null)
+                        : cw.off.includes(ch) ? <span className="dim">{cw.spend[ch] ? "off" : "no spend"}</span> : <span className="zero">·</span>}</td>
                     ))}
                     <td className="r num">{money(cw.spendTotal)}</td>
                     <td className="r big">{money(cw.paidCPC)}</td>

@@ -1,6 +1,6 @@
 import { db, Client, getClients } from "./db";
 import { PAID_CHANNELS, PaidChannel } from "./channels";
-import { addDays } from "./week";
+import { addDays, lastCompletedWeek } from "./week";
 
 export type SpendCell = { amount: number; source: "manual" | "api" | "email" | "upload" | "mixed"; updatedBy?: string };
 export type ClientWeek = {
@@ -11,6 +11,10 @@ export type ClientWeek = {
   spend: Partial<Record<PaidChannel, SpendCell>>;
   spendTotal: number | null;
   missing: PaidChannel[];
+  /** Paid channels that were running this week (had spend, or are switched on with no spend entered yet). */
+  running: PaidChannel[];
+  /** Paid channels that brought candidates this week but weren't running; those candidates were free. */
+  off: PaidChannel[];
   paidCandidates: number;
   paidCPC: number | null;
   blendedCPC: number | null;
@@ -59,7 +63,7 @@ export async function loadWeeks(fromWeek: string, toWeek: string): Promise<{ wee
   const get = (c: Client, w: string) => {
     const k = key(c.id, w);
     if (!map.has(k)) map.set(k, { client: c, weekStart: w, total: 0, byChannel: {}, spend: {}, spendTotal: null, missing: [],
-      paidCandidates: 0, paidCPC: null, blendedCPC: null, channelCPC: {} });
+      running: [], off: [], paidCandidates: 0, paidCPC: null, blendedCPC: null, channelCPC: {} });
     return map.get(k)!;
   };
   const byId = new Map(clients.map(c => [c.id, c]));
@@ -88,26 +92,42 @@ export async function loadWeeks(fromWeek: string, toWeek: string): Promise<{ wee
     get(c, r.week_start).spend[r.channel as PaidChannel] = { amount: r2(r.amount), source: "manual", updatedBy: r.updated_by };
   }
 
-  for (const cw of map.values()) {
-    const paid = cw.client.channels.filter(ch => (PAID_CHANNELS as readonly string[]).includes(ch)) as PaidChannel[];
-    // A channel with spend counts as used even if it isn't listed for the client.
-    for (const ch of Object.keys(cw.spend) as PaidChannel[]) if (!paid.includes(ch)) paid.push(ch);
-    // Paid CPC only counts channels that have spend, so a missing channel (e.g. Indeed not entered yet)
-    // never makes CPC look cheaper than it is. Blended CPC needs every channel's spend.
-    let total = 0, any = false;
-    for (const ch of paid) {
-      const s = cw.spend[ch];
-      const n = cw.byChannel[ch] || 0;
-      if (s) { total += s.amount; any = true; cw.paidCandidates += n; cw.channelCPC[ch] = n ? r2(s.amount / n) : null; }
-      else { cw.missing.push(ch); cw.channelCPC[ch] = null; }
-    }
-    cw.spendTotal = any ? r2(total) : null;
-    cw.paidCPC = any && cw.paidCandidates ? r2(total / cw.paidCandidates) : null;
-    cw.blendedCPC = any && !cw.missing.length && cw.total ? r2(total / cw.total) : null;
-  }
+  for (const cw of map.values()) classifyWeek(cw);
 
   const weeks = [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.client.name.localeCompare(b.client.name));
   return { weeks, unmatched: unmatched.sort((a, b) => b.amount - a.amount), clients };
+}
+
+/**
+ * Decide, for one client-week, which paid channels were running and what CPC is.
+ * - Spend above $0 in a week: the channel was running.
+ * - Spend of exactly $0 entered: the channel was switched off that week.
+ * - No spend at all: missing if the channel is switched on for this client (from its start week, or from the
+ *   latest finished week if no start week is set), otherwise off.
+ * Paid CPC uses only channels with spend, so a missing number never makes CPC look cheaper than it was.
+ * Blended CPC (spend ÷ every candidate) is shown only when nothing is missing.
+ */
+function classifyWeek(cw: ClientWeek) {
+  let total = 0, any = false;
+  for (const ch of PAID_CHANNELS) {
+    const s = cw.spend[ch];
+    const n = cw.byChannel[ch] || 0;
+    // Without a start week, only flag missing spend from the latest finished week on, never across history.
+    const since = cw.client.channel_since?.[ch] ?? lastCompletedWeek();
+    const switchedOn = cw.client.channels.includes(ch) && cw.weekStart >= since;
+    if (s && s.amount > 0) {
+      cw.running.push(ch);
+      total += s.amount; any = true; cw.paidCandidates += n;
+      cw.channelCPC[ch] = n ? r2(s.amount / n) : null;
+    } else if (!s && switchedOn) {
+      cw.running.push(ch); cw.missing.push(ch); cw.channelCPC[ch] = null;
+    } else if (n) {
+      cw.off.push(ch);
+    }
+  }
+  cw.spendTotal = any ? r2(total) : null;
+  cw.paidCPC = any && cw.paidCandidates ? r2(total / cw.paidCandidates) : null;
+  cw.blendedCPC = any && !cw.missing.length && cw.total ? r2(total / cw.total) : null;
 }
 
 /** All weeks that have any candidates or spend, newest first. */
@@ -130,7 +150,8 @@ export async function positionsFor(clientId: number, weekStart: string) {
 
 /** A placeholder week for a client with no candidates or spend yet. */
 export function blankWeek(client: Client, weekStart: string): ClientWeek {
-  const paid = client.channels.filter(ch => (PAID_CHANNELS as readonly string[]).includes(ch)) as PaidChannel[];
-  return { client, weekStart, total: 0, byChannel: {}, spend: {}, spendTotal: null, missing: paid, paidCandidates: 0,
-    paidCPC: null, blendedCPC: null, channelCPC: Object.fromEntries(paid.map(p => [p, null])) };
+  const cw: ClientWeek = { client, weekStart, total: 0, byChannel: {}, spend: {}, spendTotal: null, missing: [], running: [], off: [],
+    paidCandidates: 0, paidCPC: null, blendedCPC: null, channelCPC: {} };
+  classifyWeek(cw);
+  return cw;
 }
